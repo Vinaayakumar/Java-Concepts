@@ -1,16 +1,54 @@
 trigger:
-- main  # Replace with your branch name
+  - main
 
 pool:
   vmImage: 'ubuntu-latest'
 
+variables:
+  containerRegistry: 'ACRConnection'  # Use your ACR service connection name
+  imageName: 'vincloudinfra'
+
 steps:
-- task: Docker@2
-  displayName: Build and Push Docker Image
-  inputs:
-    containerRegistry: '<YourServiceConnection>'
-    repository: '<YourDockerHubRepo>'
-    command: 'buildAndPush'
-    Dockerfile: '**/Dockerfile'
-    tags: |
-      latest
+  # Run Maven to ensure the project builds locally before creating the Docker image
+  - task: Maven@1
+    displayName: 'Run Maven Build'
+    inputs:
+      mavenpomfile: 'pom.xml'  # Ensure path to your pom.xml is correct
+      mavenOptions: '-Xmx1024m'
+      goals: 'clean package -DskipTests'
+      javaHomeOption: 'JDKVersion'
+      jdkVersion: '1.8'  # Match OpenJDK version in your Dockerfile
+      jdkArchitecture: 'x64'
+
+  # Login to Azure Container Registry
+  - task: Docker@2
+    displayName: 'Login to ACR'
+    inputs:
+      command: 'login'
+      containerRegistry: $(containerRegistry)
+
+  # Build and Push Docker Image
+  - task: Docker@2
+    displayName: 'Build and Push Docker Image'
+    inputs:
+      command: 'buildAndPush'
+      containerRegistry: $(containerRegistry)
+      repository: '$(imageName)'
+      dockerfile: '**/Dockerfile'
+      tags: |
+        latest
+
+  # Prepare SonarQube Analysis
+  - task: SonarQubePrepare@7
+    displayName: 'Prepare SonarQube Analysis'
+    inputs:
+      SonarQube: 'Java-my-app'  # Replace with your SonarQube service connection name
+      scannerMode: 'CLI'
+      configMode: 'manual'
+      cliProjectKey: 'vincloudconsulting'  # Replace with your project key
+      cliProjectName: 'vincloudconsulting'  # Replace with your project name
+      cliSources: './src'
+
+  # Run SonarQube Analysis
+  - task: SonarQubeAnalyze@7
+    displayName: 'Run SonarQube Analysis'
